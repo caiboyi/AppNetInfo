@@ -27,6 +27,7 @@ import org.json.JSONObject;
 import java.util.Calendar;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static android.app.usage.NetworkStats.Bucket.UID_REMOVED;
 import static android.app.usage.NetworkStats.Bucket.UID_TETHERING;
@@ -118,8 +119,10 @@ public class AppNetInfoUtil {
                     json.put("wifi_download", json.optLong("wifi_download") + bucket.getRxBytes());
                     map.put(bucket.getUid(), json);
                 }
-                for (JSONObject json : map.values()) {
-                    array.put(json);
+                for (Map.Entry<Integer, JSONObject> entry : map.entrySet()) {
+                    if (!isSkipUid(entry.getKey())) {
+                        array.put(entry.getValue());
+                    }
                 }
                 Log.e("app", "app 带有数据个数->" + array.length());
                 obj.put("apps", array);
