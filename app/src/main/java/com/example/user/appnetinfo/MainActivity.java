@@ -1,18 +1,74 @@
 package com.example.user.appnetinfo;
 
+import android.Manifest;
+import android.content.pm.PackageManager;
+import android.os.Build;
+import android.support.annotation.NonNull;
+import android.support.v4.app.ActivityCompat;
+import android.support.v4.content.ContextCompat;
+import android.support.v4.view.animation.FastOutLinearInInterpolator;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.util.Log;
 import android.widget.TextView;
 
 import org.json.JSONException;
+import org.json.JSONObject;
 
 public class MainActivity extends AppCompatActivity {
+    private static final int CODE = 1001;
     private TextView text;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         text = findViewById(R.id.text);
+        try {
+            JSONObject obj = AppInfoUtil.get().getMobileDeviceInfo(this);
+            text.setText(obj.toString());
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+//        if (checkPermission()) {
+//            getAppNetInfo();
+//        }
+    }
+
+    private boolean checkPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && ActivityCompat.checkSelfPermission(this,
+                Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
+            this.requestPermissions(new String[]{Manifest.permission.READ_PHONE_STATE}, CODE);
+            return false;
+        }
+        return AppNetInfoUtil.get().hasPermissionToReadNetworkStats(this);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == CODE) {
+            if (grantResults != null && grantResults.length > 0) {
+                int grantedSize = 0;
+                for (int item : grantResults) {
+                    if (item == PackageManager.PERMISSION_GRANTED) {
+                        grantedSize++;
+                    }
+                }
+                if (grantedSize == grantResults.length) {
+                    getAppNetInfo();
+                }
+            }
+        }
+    }
+
+    private void getAppNetInfo() {
         new Thread() {
             @Override
             public void run() {
@@ -30,6 +86,6 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         }.start();
-
     }
+
 }

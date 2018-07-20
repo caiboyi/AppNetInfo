@@ -36,7 +36,6 @@ public class AppNetInfoUtil {
 
     private static AppNetInfoUtil instance;
 
-
     public static synchronized AppNetInfoUtil get() {
         if (instance == null) {
             synchronized (AppNetInfoUtil.class) {
@@ -66,7 +65,7 @@ public class AppNetInfoUtil {
         List<ApplicationInfo> apps = getInstallApps(context);
         JSONObject obj = new JSONObject();
         if (apps == null || apps.size() == 0) {
-            Log.e("AppNetInfoUtil", "当前设备没有安装任何第三方软件");
+            Log.e("AppNetInfoUtil", "当前设备没有安装任何软件");
             obj.putOpt("apps", new JSONArray());
         } else {
             JSONArray array = new JSONArray();
@@ -76,15 +75,15 @@ public class AppNetInfoUtil {
                 // 获取到目前为止设备的手机流量统计
                 bucket = manager.querySummaryForDevice(ConnectivityManager.TYPE_MOBILE, subId, 0, System.currentTimeMillis());
                 // wifi上传总流量
-                obj.put("wifi_upload", bucket.getTxBytes());
+                obj.put("mobile_upload", bucket.getTxBytes());
                 // wifi下载的总流量
-                obj.put("wifi_download", bucket.getRxBytes());
+                obj.put("mobile_download", bucket.getRxBytes());
                 // 获取到目前为止设备的手机流量统计
                 bucket = manager.querySummaryForDevice(ConnectivityManager.TYPE_WIFI, subId, 0, System.currentTimeMillis());
                 //获取手机3g/2g网络上传的总流量
-                obj.put("mobile_upload", bucket.getTxBytes());
+                obj.put("wifi_upload", bucket.getTxBytes());
                 //手机2g/3g下载的总流量
-                obj.put("mobile_download", bucket.getRxBytes());
+                obj.put("wifi_download", bucket.getRxBytes());
                 // 根据uid 来获取对应的app的流量信息
                 NetworkStats mobileState = manager.querySummary(ConnectivityManager.TYPE_MOBILE, subId, 0, System.currentTimeMillis());
                 NetworkStats wifiState = manager.querySummary(ConnectivityManager.TYPE_WIFI, subId, 0, System.currentTimeMillis());
@@ -93,13 +92,11 @@ public class AppNetInfoUtil {
                     JSONObject appNet = new JSONObject();
                     appNet.put("app", app.packageName);
                     map.put(app.uid, appNet);
-                    Log.e("app", "pName -> " + app.packageName + ", uid -> " + app.uid);
                 }
                 while (mobileState.hasNextBucket()) {
                     mobileState.getNextBucket(bucket);
                     if (!isSkipUid(bucket.getUid())) {
                         JSONObject json = map.get(bucket.getUid());
-                        Log.e("app", "mobile state -> " + bucket.getUid() + ", tag:" + bucket.getTag());
                         if (json == null) {
                             json = new JSONObject();
                             json.put("uid", bucket.getUid());
@@ -124,7 +121,6 @@ public class AppNetInfoUtil {
                         array.put(entry.getValue());
                     }
                 }
-                Log.e("app", "app 带有数据个数->" + array.length());
                 obj.put("apps", array);
             } else {
                 for (ApplicationInfo app : apps) {
@@ -174,7 +170,7 @@ public class AppNetInfoUtil {
         return manager.getInstalledApplications(PackageManager.GET_META_DATA);
     }
 
-    private boolean hasPermissionToReadNetworkStats(Context context) {
+    public boolean hasPermissionToReadNetworkStats(Context context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
             return true;
         }
