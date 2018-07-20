@@ -1,27 +1,48 @@
 package com.example.user.appnetinfo;
 
+import android.Manifest;
+import android.app.AppOpsManager;
+import android.app.usage.NetworkStats;
+import android.app.usage.NetworkStatsManager;
+import android.app.usage.UsageStats;
+import android.app.usage.UsageStatsManager;
 import android.content.Context;
+import android.content.Intent;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.Signature;
+import android.net.ConnectivityManager;
+import android.net.TrafficStats;
 import android.os.Build;
-import android.os.Environment;
-import android.os.StatFs;
-import android.os.storage.StorageManager;
+import android.os.RemoteException;
+import android.provider.Settings;
+import android.support.v4.app.ActivityCompat;
 import android.telephony.TelephonyManager;
 import android.text.TextUtils;
-import android.text.format.Formatter;
+import android.util.Log;
+import android.util.SparseArray;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.io.File;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.util.Calendar;
+import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.logging.SimpleFormatter;
+
+import static android.app.usage.NetworkStats.Bucket.UID_REMOVED;
+import static android.app.usage.NetworkStats.Bucket.UID_TETHERING;
 
 public class AppInfoUtil {
-    private static final int INTERNAL_STORAGE = 0;
-    private static final int EXTERNAL_STORAGE = 1;
-    private static final String DEFAULT = "unknow";
 
     private static AppInfoUtil instance;
 
@@ -39,196 +60,283 @@ public class AppInfoUtil {
     private AppInfoUtil() {
     }
 
-    public JSONObject getMobileDeviceInfo(Context context) throws JSONException {
+    /**
+     * 获取手机设备里面安装的app的流量信息
+     *
+     * @param context
+     * @throws JSONException
+     */
+    public String getAppNetInfos(Context context) throws JSONException, RemoteException {
+        TelephonyManager tm = (TelephonyManager) context.getSystemService(Context.TELEPHONY_SERVICE);
+        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.READ_PHONE_STATE) != PackageManager.PERMISSION_GRANTED) {
+            return "";
+        }
+        String subId = tm.getSubscriberId();
+        List<ApplicationInfo> apps = getInstallApps(context);
         JSONObject obj = new JSONObject();
-        //手机主板名
-        obj.put("board", Build.BOARD);
-        //手机品牌
-        obj.put("brand", Build.BRAND);
-        // 手机型号
-        obj.put("model", Build.MODEL);
-        // 设备名
-        obj.put("device", Build.DEVICE);
-        // 手机厂商
-        obj.put("manufacturer", Build.MANUFACTURER);
-        // 商品名
-        obj.put("product", Build.PRODUCT);
-        // 获取手机的硬件序列号
-        obj.put("device_serial", Build.VERSION.SDK_INT >= Build.VERSION_CODES.O ? Build.getSerial() : Build.SERIAL);
-        obj.put("display", Build.DISPLAY);
-        obj.put("fingerprint", Build.FINGERPRINT);
-        obj.put("hardware", Build.HARDWARE);
-        obj.put("host", Build.HOST);
-        obj.put("id", Build.ID);
-        obj.put("tags", Build.TAGS);
-        obj.put("time", Build.TIME);
-        obj.put("user", Build.USER);
-        obj.put("cpu_abi", Build.CPU_ABI);
-        obj.put("apu_abi2", Build.CPU_ABI2);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
-            obj.put("supported_32_bit_abis", Build.SUPPORTED_32_BIT_ABIS);
-            obj.put("supported_64_bit_abis", Build.SUPPORTED_64_BIT_ABIS);
-            obj.put("supported_abis", Build.SUPPORTED_ABIS);
-        }
-        // 设备IMEI
-        obj.put("imei", getIMEI(context));
-        // android SDK 版本号
-        obj.put("android_sdk", Build.VERSION.SDK_INT);
-        // android版本
-        obj.put("android_release", Build.VERSION.RELEASE);
-        // 默认系统语言
-        obj.put("default_language", Locale.getDefault().getLanguage());
-        // 国家
-        obj.put("country", context.getResources().getConfiguration().locale.getCountry());
-        // 设备宽度
-        obj.put("screen_width", context.getResources().getDisplayMetrics().widthPixels);
-        //设备高度
-        obj.put("screen_height", context.getResources().getDisplayMetrics().heightPixels);
-        obj.put("density", context.getResources().getDisplayMetrics().density);
-
-        // sd是否挂载
-        obj.put("sd_state", isSDMount());
-        // sd使用情况
-        String internalSDUseInfo = getSDInfo(context, INTERNAL_STORAGE);
-        String externalSDUseInfo = getSDInfo(context, EXTERNAL_STORAGE);
-        if (!TextUtils.isEmpty(internalSDUseInfo)) {
-            obj.put("internal_sd_use_info", internalSDUseInfo);
-        }
-        if (TextUtils.isEmpty(externalSDUseInfo)) {
-            obj.put("external_sd_use_info", internalSDUseInfo);
-        }
-        // SIM卡信息
-        HashMap<String, String> simMap = getSIMInfo(context);
-        if (simMap != null && simMap.size() > 0) {
-            for (String key : simMap.keySet()) {
-                obj.put(key, simMap.get(key));
-            }
-        }
-        // MacUtils.getStartWifiEnabled();
-        //obj.put("wifi_mac", MacUtils.getMobileMAC(context));
-        return obj;
-    }
-
-    /**
-     * 获取手机的IMEI
-     */
-    private String getIMEI(Context context) {
-        TelephonyManager manager = (TelephonyManager) context.getApplicationContext().
-                getSystemService(Context.TELEPHONY_SERVICE);
-        String imei = manager.getDeviceId();
-        if (imei == null) {
-            imei = DEFAULT;
-        }
-        return imei;
-    }
-
-    /**
-     * 获取SIM卡的相关信息
-     *
-     * @param context
-     * @return
-     */
-    private HashMap<String, String> getSIMInfo(Context context) {
-        TelephonyManager manager = (TelephonyManager) context.getApplicationContext().
-                getSystemService(Context.TELEPHONY_SERVICE);
-        HashMap<String, String> map = new HashMap();
-        String simSerialNumber = manager.getSimSerialNumber();
-        String imsi = manager.getSubscriberId();
-        String line1Number = manager.getLine1Number();
-        // 运营商编号
-        String networkOperator = manager.getNetworkOperator();
-        // 运营商名称
-        String networkOperatorName = manager.getNetworkOperatorName();
-        // 获取国家/区域编号
-        String simCountryIso = manager.getSimCountryIso();
-        // 网络运营商的国家编号和移动网络编号
-        String simOperator = manager.getSimOperator();
-        //服务提供者名称
-        String simOperatorName = manager.getSimOperatorName();
-//        //当前订阅的运营商ID
-//        int simCarrierId = manager.getSimCarrierId();
-//        //当前订阅的运营商ID名称。
-//        CharSequence simCarrierIdName = manager.getSimCarrierIdName();
-        map.put("sim_state", manager.getSimState() == TelephonyManager.SIM_STATE_READY ? "ready" : "error");
-        map.put("simSerialNumber", TextUtils.isEmpty(simSerialNumber) ? DEFAULT : simSerialNumber);
-        map.put("imsi", TextUtils.isEmpty(imsi) ? DEFAULT : imsi);
-        map.put("line1Number", TextUtils.isEmpty(line1Number) ? DEFAULT : line1Number);
-        map.put("networkOperator", TextUtils.isEmpty(networkOperator) ? DEFAULT : networkOperator);
-        map.put("networkOperatorName", TextUtils.isEmpty(networkOperatorName) ? DEFAULT : networkOperatorName);
-        map.put("simCountryIso", TextUtils.isEmpty(simCountryIso) ? DEFAULT : simCountryIso);
-        map.put("simOperator", TextUtils.isEmpty(simOperator) ? DEFAULT : simOperator);
-        map.put("simOperatorName", TextUtils.isEmpty(simOperatorName) ? DEFAULT : simOperatorName);
-//        map.put("simCarrierId", String.valueOf(simCarrierId));
-//        map.put("simCarrierIdName", TextUtils.isEmpty(simCarrierIdName) ? DEFAULT : simCarrierIdName.toString());
-        return map;
-    }
-
-
-    /**
-     * sd卡是否挂载
-     *
-     * @return
-     */
-    private boolean isSDMount() {
-        return TextUtils.equals(Environment.MEDIA_MOUNTED, Environment.getExternalStorageState());
-    }
-
-    /**
-     * 获取sd卡的使用信息
-     *
-     * @param context
-     * @param sdType
-     * @return
-     */
-    private String getSDInfo(Context context, int sdType) {
-        String path = getStoragePath(context, sdType);
-        if (!isSDMount() || TextUtils.isEmpty(path)) {
-            return "无外置SD卡";
-        }
-        File file = new File(path);
-        StatFs statFs = new StatFs(file.getPath());
-        long totalSpace = 0, avaliableSpacve = 0;
-        StringBuilder sb = new StringBuilder();
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.JELLY_BEAN_MR2) {
-            totalSpace = statFs.getBlockCountLong() * statFs.getBlockSizeLong();
-            avaliableSpacve = statFs.getAvailableBlocksLong() * statFs.getBlockSizeLong();
-            sb.append("可用/总共:").append(Formatter.formatFileSize(context, avaliableSpacve))
-                    .append("/").append(Formatter.formatFileSize(context, totalSpace));
-        }
-        return sb.toString();
-    }
-
-    /**
-     * 获取指定类别的存储路径
-     *
-     * @param context
-     * @param type
-     * @return
-     */
-    private String getStoragePath(Context context, int type) {
-        StorageManager manager = (StorageManager) context.getSystemService(Context.STORAGE_SERVICE);
-        try {
-            Method method = manager.getClass().getMethod("getVolumePaths");
-            String[] paths = (String[]) method.invoke(manager);
-            switch (type) {
-                case INTERNAL_STORAGE:
-                    return paths[type];
-                case EXTERNAL_STORAGE:
-                    if (paths.length > 1) {
-                        return paths[type];
+        if (apps == null || apps.size() == 0) {
+            Log.e("AppNetInfoUtil", "当前设备没有安装任何软件");
+            obj.putOpt("apps", new JSONArray());
+        } else {
+            JSONArray array = new JSONArray();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N && hasPermissionToReadNetworkStats(context)) {
+                NetworkStats.Bucket bucket = new NetworkStats.Bucket();
+                NetworkStatsManager manager = (NetworkStatsManager) context.getSystemService(Context.NETWORK_STATS_SERVICE);
+                // 获取到目前为止设备的手机流量统计
+                bucket = manager.querySummaryForDevice(ConnectivityManager.TYPE_MOBILE, subId, 0, System.currentTimeMillis());
+                // wifi上传总流量
+                obj.put("mobile_upload", bucket.getTxBytes());
+                // wifi下载的总流量
+                obj.put("mobile_download", bucket.getRxBytes());
+                // 获取到目前为止设备的手机流量统计
+                bucket = manager.querySummaryForDevice(ConnectivityManager.TYPE_WIFI, subId, 0, System.currentTimeMillis());
+                //获取手机3g/2g网络上传的总流量
+                obj.put("wifi_upload", bucket.getTxBytes());
+                //手机2g/3g下载的总流量
+                obj.put("wifi_download", bucket.getRxBytes());
+                // 根据uid 来获取对应的app的流量信息
+                NetworkStats mobileState = manager.querySummary(ConnectivityManager.TYPE_MOBILE, subId, 0, System.currentTimeMillis());
+                NetworkStats wifiState = manager.querySummary(ConnectivityManager.TYPE_WIFI, subId, 0, System.currentTimeMillis());
+                HashMap<Integer, JSONObject> map = new HashMap<>();
+                for (ApplicationInfo app : apps) {
+                    JSONObject appNet = new JSONObject();
+                    appNet.put("app", app.packageName);
+                    map.put(app.uid, appNet);
+                }
+                while (mobileState.hasNextBucket()) {
+                    mobileState.getNextBucket(bucket);
+                    if (!isSkipUid(bucket.getUid())) {
+                        JSONObject json = map.get(bucket.getUid());
+                        if (json == null) {
+                            json = new JSONObject();
+                            json.put("uid", bucket.getUid());
+                        }
+                        json.put("mobile_upload", json.optLong("mobile_upload") + bucket.getTxBytes());
+                        json.put("mobile_download", json.optLong("mobile_download") + bucket.getRxBytes());
+                        map.put(bucket.getUid(), json);
                     }
-                default:
-                    break;
+                }
+                while (wifiState.hasNextBucket()) {
+                    wifiState.getNextBucket(bucket);
+                    JSONObject json = map.get(bucket.getUid());
+                    if (json == null) {
+                        json = new JSONObject();
+                    }
+                    json.put("wifi_upload", json.optLong("wifi_upload") + bucket.getTxBytes());
+                    json.put("wifi_download", json.optLong("wifi_download") + bucket.getRxBytes());
+                    map.put(bucket.getUid(), json);
+                }
+                for (Map.Entry<Integer, JSONObject> entry : map.entrySet()) {
+                    if (!isSkipUid(entry.getKey())) {
+                        array.put(entry.getValue());
+                    }
+                }
+                obj.put("apps", array);
+            } else {
+                for (ApplicationInfo app : apps) {
+                    // 上传流量
+                    long upload = TrafficStats.getUidTxBytes(app.uid);
+                    // 下载流量
+                    long download = TrafficStats.getUidRxBytes(app.uid);
+                    JSONObject appNet = new JSONObject();
+                    appNet.put("app", app.packageName);
+                    appNet.put("upload", upload);
+                    appNet.put("download", download);
+                    Log.e("app", appNet.toString());
+                    array.put(appNet);
+                }
+                obj.put("apps", array);
+                //获取手机3g/2g网络上传的总流量
+                obj.put("mobile_upload", TrafficStats.getMobileTxBytes());
+                //手机2g/3g下载的总流量
+                obj.put("mobile_download", TrafficStats.getMobileRxBytes());
+                // 手机全部网络接口 包括wifi，3g、2g上传的总流量
+                obj.put("upload", TrafficStats.getTotalTxBytes());
+                // 手机全部网络接口 包括wifi，3g、2g下载的总流量
+                obj.put("download", TrafficStats.getTotalRxBytes());
             }
-        } catch (NoSuchMethodException e) {
-            e.printStackTrace();
-        } catch (IllegalAccessException e) {
-            e.printStackTrace();
-        } catch (InvocationTargetException e) {
+        }
+        return obj.toString();
+    }
+
+    /**
+     * 获取手机里面安装的app的信息
+     *
+     * @param context
+     * @return
+     * @throws JSONException
+     */
+    public JSONArray getInstallAppInfo(Context context) throws JSONException {
+        PackageManager pm = context.getPackageManager();
+        JSONArray array = new JSONArray();
+        //List<ApplicationInfo> apps = pm.getInstalledApplications(PackageManager.GET_META_DATA);
+        List<PackageInfo> apps = pm.getInstalledPackages(PackageManager.GET_META_DATA);
+        for (PackageInfo app : apps) {
+            JSONObject obj = new JSONObject();
+            obj.put("package_name", app.packageName);
+            obj.put("version_name", app.versionName);
+            obj.put("version_code", app.versionCode);
+            obj.put("firstInstallTime", app.firstInstallTime);
+            obj.put("singInfo", getSingInfo(app.signingInfo.getApkContentsSigners()));
+        }
+        return array;
+    }
+
+    /**
+     * 获取app的使用频率,频率按月查询
+     */
+    public JSONArray getAppUsageState(Context context) throws JSONException {
+        JSONArray array = new JSONArray();
+        SimpleDateFormat dayFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.CHINA);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP_MR1) {
+            UsageStatsManager manager = (UsageStatsManager) context.getApplicationContext()
+                    .getSystemService(Context.USAGE_STATS_SERVICE);
+            Calendar mCalendar = Calendar.getInstance();
+            mCalendar.set(Calendar.HOUR, 0);
+            mCalendar.set(Calendar.MINUTE, 0);
+            mCalendar.set(Calendar.SECOND, 0);
+            mCalendar.set(Calendar.MILLISECOND, 0);
+            List<UsageStats> usageStatsList = manager.queryUsageStats(UsageStatsManager.INTERVAL_DAILY,
+                    mCalendar.getTimeInMillis(), System.currentTimeMillis());
+            HashMap<String, JSONObject> map = new HashMap<>();
+            if (usageStatsList != null && usageStatsList.size() > 0) {
+                for (UsageStats stats : usageStatsList) {
+                    JSONObject obj = map.get(stats.getPackageName());
+                    if (obj == null) {
+                        obj = new JSONObject();
+                    }
+                    obj.put("package_name", stats.getPackageName());
+                    if (obj.optLong("first_time") < stats.getFirstTimeStamp()) {
+                        obj.put("start_time", stats.getFirstTimeStamp());
+                        obj.put("end_time", stats.getLastTimeStamp());
+                        obj.put("total_time", stats.getTotalTimeInForeground());
+                    }
+                    obj.put("count", obj.optInt("count") + 1);
+                    map.put(stats.getPackageName(), obj);
+                }
+                for (JSONObject o : map.values()) {
+                    o.put("start_time", dayFormat.format(new Date(o.optLong("start_time"))));
+                    o.put("end_time", dayFormat.format(new Date(o.optLong("end_time"))));
+                    o.put("total_time", formatTime(o.optLong("total_time")));
+                    array.put(o);
+                }
+            }
+        }
+        return array;
+    }
+
+    /**
+     * 获取app的签名信息
+     */
+    private String getSingInfo(Signature[] signs) {
+        String tmp = null;
+        for (Signature sig : signs) {
+            tmp = getSignatureString(sig, "SHA1");
+            break;
+        }
+        return tmp;
+    }
+
+    private List<ApplicationInfo> getInstallApps(Context context) {
+        PackageManager manager = context.getPackageManager();
+        return manager.getInstalledApplications(PackageManager.GET_META_DATA);
+    }
+
+    public boolean hasPermissionToReadNetworkStats(Context context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return true;
+        }
+        final AppOpsManager appOps = (AppOpsManager) context.getSystemService(Context.APP_OPS_SERVICE);
+        int mode = appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS,
+                android.os.Process.myUid(), context.getPackageName());
+        if (mode == AppOpsManager.MODE_ALLOWED) {
+            return true;
+        }
+        // 打开“有权查看使用情况的应用”页面
+        Intent intent = new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS);
+        context.startActivity(intent);
+        return false;
+    }
+
+    private static long getTimesMonthMorning() {
+        Calendar cal = Calendar.getInstance();
+        cal.set(cal.get(Calendar.YEAR), cal.get(Calendar.MONTH), cal.get(Calendar.DAY_OF_MONTH), 0, 0, 0);
+        cal.set(Calendar.DAY_OF_MONTH, cal.getActualMinimum(Calendar.DAY_OF_MONTH));
+        return cal.getTimeInMillis();
+    }
+
+    private static int getUidByPackageName(Context context, String packageName) {
+        int uid = -1;
+        PackageManager packageManager = context.getPackageManager();
+        try {
+            PackageInfo packageInfo = packageManager.getPackageInfo(packageName, PackageManager.GET_META_DATA);
+
+            uid = packageInfo.applicationInfo.uid;
+            Log.i(MainActivity.class.getSimpleName(), packageInfo.packageName + " uid:" + uid);
+
+
+        } catch (PackageManager.NameNotFoundException e) {
+        }
+
+        return uid;
+    }
+
+    private boolean isSkipUid(int uid) {
+        return uid == UID_REMOVED || uid == UID_TETHERING || uid == android.os.Process.SYSTEM_UID;
+    }
+
+    /**
+     * 获取相应的类型的字符串（把签名的byte[]信息转换成16进制）
+     */
+    private String getSignatureString(Signature sig, String type) {
+        byte[] hexBytes = sig.toByteArray();
+        String fingerprint = "error!";
+        try {
+            MessageDigest digest = MessageDigest.getInstance(type);
+            if (digest != null) {
+                byte[] digestBytes = digest.digest(hexBytes);
+                StringBuilder sb = new StringBuilder();
+                for (byte digestByte : digestBytes) {
+                    sb.append((Integer.toHexString((digestByte & 0xFF) | 0x100)).substring(1, 3));
+                }
+                fingerprint = sb.toString();
+            }
+        } catch (NoSuchAlgorithmException e) {
             e.printStackTrace();
         }
-        return null;
+        return fingerprint;
+    }
 
+    /**
+     * 格式化使用的时长
+     *
+     * @param time
+     * @return
+     */
+    private String formatTime(long time) {
+        if (time < 1000) {
+            return "1秒";
+        }
+        time /= 1000;
+        if (time < 60) {
+            // 1分钟以内
+            return time + "秒";
+        } else if (time < 3600) {
+            //1小时以内
+            long minute = time / 60;
+            long second = time % 60;
+            return minute + "分" + second+"秒";
+        } else if (time < 24 * 3600) {
+            // 1天以内
+            long hour = time / 3600;
+            long rightTime = time % 3600;
+            long minute = rightTime / 60;
+            long second = rightTime % 60;
+            return hour + "时" + minute + "分" + second+"秒";
+        } else {
+            long day = time / (24 * 3600);
+            return day + "天";
+        }
     }
 
 }

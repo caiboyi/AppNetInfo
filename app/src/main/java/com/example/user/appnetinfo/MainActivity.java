@@ -1,7 +1,10 @@
 package com.example.user.appnetinfo;
 
 import android.Manifest;
+import android.content.Context;
 import android.content.pm.PackageManager;
+import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiManager;
 import android.os.Build;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
@@ -12,8 +15,13 @@ import android.os.Bundle;
 import android.util.Log;
 import android.widget.TextView;
 
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+
+import java.net.NetworkInterface;
+import java.util.Collections;
+import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
     private static final int CODE = 1001;
@@ -24,21 +32,14 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         text = findViewById(R.id.text);
-        try {
-            JSONObject obj = AppInfoUtil.get().getMobileDeviceInfo(this);
-            text.setText(obj.toString());
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
     }
-
 
     @Override
     protected void onResume() {
         super.onResume();
-//        if (checkPermission()) {
-//            getAppNetInfo();
-//        }
+        if (checkPermission()) {
+            getAppNetInfo();
+        }
     }
 
     private boolean checkPermission() {
@@ -47,7 +48,7 @@ public class MainActivity extends AppCompatActivity {
             this.requestPermissions(new String[]{Manifest.permission.READ_PHONE_STATE}, CODE);
             return false;
         }
-        return AppNetInfoUtil.get().hasPermissionToReadNetworkStats(this);
+        return AppInfoUtil.get().hasPermissionToReadNetworkStats(this);
     }
 
     @Override
@@ -74,11 +75,11 @@ public class MainActivity extends AppCompatActivity {
             public void run() {
                 super.run();
                 try {
-                    final String data = AppNetInfoUtil.get().getAppNetInfos(MainActivity.this);
+                    final JSONArray array = AppInfoUtil.get().getAppUsageState(MainActivity.this);
                     runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
-                            text.setText(data);
+                            text.setText(array.toString());
                         }
                     });
                 } catch (Exception e) {
