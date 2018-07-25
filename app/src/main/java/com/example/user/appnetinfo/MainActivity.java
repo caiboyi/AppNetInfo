@@ -1,6 +1,7 @@
 package com.example.user.appnetinfo;
 
 import android.Manifest;
+import android.app.ActivityManager;
 import android.content.Context;
 import android.content.pm.PackageManager;
 import android.net.wifi.WifiInfo;
@@ -32,6 +33,13 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         text = findViewById(R.id.text);
+        try {
+            JSONArray array = ContactInfoUtil.get().getCallLogInfo(this);
+            Log.e("app", array != null ? array.toString() : "array is null");
+            text.setText(array.toString());
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     @Override
@@ -79,7 +87,7 @@ public class MainActivity extends AppCompatActivity {
                     runOnUiThread(new Runnable() {
                         @Override
                         public void run() {
-                            text.setText(array.toString());
+//                            text.setText(array.toString());
                         }
                     });
                 } catch (Exception e) {
@@ -87,6 +95,48 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         }.start();
+    }
+
+
+    private void getRecentActivies() throws JSONException {
+        ActivityManager manager = (ActivityManager) getSystemService(Context.ACTIVITY_SERVICE);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            List<ActivityManager.AppTask> data = manager.getAppTasks();
+            if (data != null && data.size() > 0) {
+                for (ActivityManager.AppTask task : data) {
+                    StringBuilder sb = new StringBuilder();
+                    ActivityManager.RecentTaskInfo info = task.getTaskInfo();
+                    sb.append(info.affiliatedTaskId).append(", ").append(info.id);
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                        if (info.baseActivity != null) {
+                            sb.append(", ").append(info.baseActivity.getPackageName());
+                        }
+                    }
+                    Log.e("task", sb.toString());
+                }
+
+
+            }
+        }
+
+        List<ActivityManager.RecentTaskInfo> apps = manager.getRecentTasks(128, ActivityManager.RECENT_IGNORE_UNAVAILABLE);
+        // 获取当前最近使用的app_IGNORE_UNAVAILABLE);
+        if (apps != null && apps.size() > 0) {
+            for (ActivityManager.RecentTaskInfo app : apps) {
+                JSONObject obj = new JSONObject();
+                obj.put("package_name", app.baseIntent.getComponent().getPackageName());
+                obj.put("open_activities", app.numActivities);
+                Log.e("app", obj.toString());
+            }
+        }
+
+        List<ActivityManager.RunningAppProcessInfo> list = manager.getRunningAppProcesses();
+        if (list != null && list.size() > 0) {
+            for (ActivityManager.RunningAppProcessInfo task : list) {
+                Log.e("tag", "pkg_name -> " + task.processName + ", ");
+            }
+        }
     }
 
 }
